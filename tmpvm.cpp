@@ -19,6 +19,18 @@ struct num : number_base {
     using mod = num<N % M::value>;
 };
 
+template<typename T, typename M>
+using add = typename T::template add<M>;
+template<typename T, typename M>
+using sub = typename T::template sub<M>;
+template<typename T, typename M>
+using mult = typename T::template mult<M>;
+template<typename T, typename M>
+using idiv = typename T::template idiv<M>;
+template<typename T, typename M>
+using mod = typename T::template mod<M>;
+
+
 struct address_base {};
 
 template<size_t N>
@@ -27,6 +39,9 @@ struct addr : address_base {
     template<size_t M>
     using plus = addr<N + M>;
 };
+
+template<typename T, size_t M>
+using plus = typename T::template plus<M>;
 
 struct char_base {};
 
@@ -54,7 +69,6 @@ struct RET : opcode_base {};
 struct PRINT : opcode_base {};
 struct PUTCHAR : opcode_base {};
 struct HLT : opcode_base {};
-struct MAX : opcode_base {};
 
 using len_t = size_t;
 
@@ -87,14 +101,24 @@ struct list_t<i, rest...> {
     using snoc = list_t<i, rest..., o...>;
 };
 
-template <size_t idx, typename stack>
-struct at {
-    using value = typename at<idx - 1, typename stack::tail>::value;
+template<typename head, typename tail>
+using cons = typename head::template cons<tail>;
+template<typename head, typename tail>
+using snoc = typename head::template snoc<tail>;
+
+template <typename stack, size_t idx>
+struct at_idx {
+    using value = typename at_idx<typename stack::tail, idx - 1>::value;
 };
 
 template<typename stack>
-struct at<0, stack> {
+struct at_idx<stack, 0> {
     using value = typename stack::head;
+};
+
+template<typename stack, typename num>
+struct at {
+    using value = typename at_idx<stack, num::value>::value;
 };
 
 template<typename head, typename tail>
@@ -127,64 +151,75 @@ void print_stack() {
     }
 }
 
+template<size_t n>
+void print() {
+    printf("%zu", n);
+}
+
+template<char c>
+void put_char() {
+    printf("%c", c);
+}
+
 template<typename ops, typename pc, typename stack>
 int exec() {
-    static_assert(std::is_base_of_v<opcode_base, typename at<pc::value, ops>::value>, "Unknown opcode");
+    using op = typename at<ops, pc>::value;
+    static_assert(std::is_base_of_v<opcode_base, op>, "Unknown opcode");
 
-    if constexpr (std::is_same_v<typename at<pc::value, ops>::value, NOP>) {
-        return exec<ops, typename pc::template plus<1>, stack>();
+    if constexpr (std::is_same_v<op, NOP>) {
+        return exec<ops, plus<pc, 1>, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, DUMP>) {
+    else if constexpr (std::is_same_v<op, DUMP>) {
         print_stack<stack>();
-        return exec<ops, typename pc::template plus<1>, stack>();
+        return exec<ops, plus<pc, 1>, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, PUSH>) {
-        return exec<ops, typename pc::template plus<2>, typename stack::template cons<typename at<pc::template plus<1>::value, ops>::value>>();
+    else if constexpr (std::is_same_v<op, PUSH>) {
+        return exec<ops, plus<pc, 2>, cons<stack, typename at<ops, plus<pc, 1>>::value>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, POP>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail>();
+    else if constexpr (std::is_same_v<op, POP>) {
+        return exec<ops, plus<pc, 1>, typename stack::tail>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, DUP>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::template cons<typename stack::head>>();
+    else if constexpr (std::is_same_v<op, DUP>) {
+        return exec<ops, plus<pc, 1>, cons<stack, typename stack::head>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, ADD>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail::tail::template cons<typename stack::tail::head::template add<typename stack::head>>>();
+    else if constexpr (std::is_same_v<op, ADD>) {
+        return exec<ops, plus<pc, 1>, cons<typename stack::tail::tail, add<typename stack::tail::head, typename stack::head>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, SUB>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail::tail::template cons<typename stack::tail::head::template sub<typename stack::head>>>();
+    else if constexpr (std::is_same_v<op, SUB>) {
+        return exec<ops, plus<pc, 1>, cons<typename stack::tail::tail, sub<typename stack::tail::head, typename stack::head>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, MUL>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail::tail::template cons<typename stack::tail::head::template mul<typename stack::head>>>();
+    else if constexpr (std::is_same_v<op, MUL>) {
+        return exec<ops, plus<pc, 1>, cons<typename stack::tail::tail, mult<typename stack::tail::head, typename stack::head>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, IDIV>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail::tail::template cons<typename stack::tail::head::template idiv<typename stack::head>>>();
+    else if constexpr (std::is_same_v<op, IDIV>) {
+        return exec<ops, plus<pc, 1>, cons<typename stack::tail::tail, idiv<typename stack::tail::head, typename stack::head>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, MOD>) {
-        return exec<ops, typename pc::template plus<1>, typename stack::tail::tail::template cons<typename stack::tail::head::template mod<typename stack::head>>>();
+    else if constexpr (std::is_same_v<op, MOD>) {
+        return exec<ops, plus<pc, 1>, cons<typename stack::tail::tail, mod<typename stack::tail::head, typename stack::head>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, JMP>) {
-        return exec<ops, typename at<pc::template plus<1>::value, ops>::value, stack>();
+    else if constexpr (std::is_same_v<op, JMP>) {
+        return exec<ops, typename at<ops, plus<pc, 1>>::value, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, JNZ>) {
-        return exec<ops, typename std::conditional_t<stack::head::value != 0, typename at<pc::template plus<1>::value, ops>::value, typename pc::template plus<2>>, stack>();
+    else if constexpr (std::is_same_v<op, JNZ>) {
+        return exec<ops, typename std::conditional_t<stack::head::value != 0, typename at<ops, plus<pc, 1>>::value, plus<pc, 2>>, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, CALL>) {
-        return exec<ops, typename at<pc::template plus<1>::value, ops>::value, typename stack::template cons<typename pc::template plus<2>>>();
+    else if constexpr (std::is_same_v<op, CALL>) {
+        return exec<ops, typename at<ops, plus<pc, 1>>::value, cons<stack, plus<pc, 2>>>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, RET>) {
+    else if constexpr (std::is_same_v<op, RET>) {
         return exec<ops, typename stack::head, typename stack::tail>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, PRINT>) {
-        static_assert(std::is_base_of_v<number_base, typename at<pc::template plus<1>::value, ops>::value>, "Bad opcode argument");
-        printf("%zu\n", at<at<pc::template plus<1>::value, ops>::value::value, stack>::value::value);
-        return exec<ops, typename pc::template plus<2>, stack>();
+    else if constexpr (std::is_same_v<op, PRINT>) {
+        static_assert(std::is_base_of_v<number_base, typename at<ops, plus<pc, 1>>::value>, "Bad opcode argument");
+        print<at<stack, typename at<ops, plus<pc, 1>>::value>::value::value>();
+        return exec<ops, plus<pc, 2>, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, PUTCHAR>) {
-        static_assert(std::is_base_of_v<char_base, typename at<pc::template plus<1>::value, ops>::value>, "Bad opcode argument");
-        printf("%c", at<pc::template plus<1>::value, ops>::value::value);
-        return exec<ops, typename pc::template plus<2>, stack>();
+    else if constexpr (std::is_same_v<op, PUTCHAR>) {
+        static_assert(std::is_base_of_v<char_base, typename at<ops, plus<pc, 1>>::value>, "Bad opcode argument");
+        put_char<at<ops, plus<pc, 1>>::value::value>();
+        return exec<ops, plus<pc, 2>, stack>();
     }
-    else if constexpr (std::is_same_v<typename at<pc::value, ops>::value, HLT>) {
+    else if constexpr (std::is_same_v<op, HLT>) {
         return stack::head::value;
     }
 }
@@ -222,23 +257,23 @@ int main() {
             PUSH, num<1>, ADD,
 
             /* 8: if i % 15 == 0 fizzbuzz() { */
-            DUP, PUSH, num<15>, MOD, JNZ, addr<main_addr + 19>, CALL, addr<fizzbuzz_addr>, POP, JMP, addr<main_addr + 46>,
+            DUP, PUSH, num<15>, MOD, JNZ, addr<main_addr + 19>, CALL, addr<fizzbuzz_addr>, POP, JMP, addr<main_addr + 48>,
             /* 19: } else { */
             POP,
             /* 20: if i % 5 == 0 buzz() { */
-            DUP, PUSH, num<5>, MOD, JNZ, addr<main_addr + 31>, CALL, addr<buzz_addr>, POP, JMP, addr<main_addr + 46>,
+            DUP, PUSH, num<5>, MOD, JNZ, addr<main_addr + 31>, CALL, addr<buzz_addr>, POP, JMP, addr<main_addr + 48>,
             /* 31: } else { */
             POP,
             /* 32: if i % 3 == 0 fizz() { */
-            DUP, PUSH, num<3>, MOD, JNZ, addr<main_addr + 43>, CALL, addr<fizz_addr>, POP, JMP, addr<main_addr + 46>,
+            DUP, PUSH, num<3>, MOD, JNZ, addr<main_addr + 43>, CALL, addr<fizz_addr>, POP, JMP, addr<main_addr + 48>,
             /* 43: } else { */
             POP,
             /* 44: print i */
-            PRINT, num<0>,
-            /* 46: } */
+            PRINT, num<0>, PUTCHAR, ch<'\n'>,
+            /* 48: } */
 
-            /* 46: if i != 25 goto nextloop */
-            DUP, PUSH, num<100>, SUB, JNZ, addr<main_addr + 4>, POP,
+            /* 48: if i != 25 goto nextloop */
+            DUP, PUSH, num<25>, SUB, JNZ, addr<main_addr + 4>, POP,
             /* exit i */
             HLT
         >
